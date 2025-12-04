@@ -1,0 +1,40 @@
+# ==============================================================================
+# PROYECTO: OT Network Forensics
+# ARCHIVO: modbus_security.rules
+# DESCRIPCIÓN: Reglas de detección para anomalías en protocolos industriales.
+# REFERENCIA: Análisis forense del caso 4SICS-GeekLounge
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# REGLA 1: Detección de Escritura Modbus (Function Code 06)
+# ------------------------------------------------------------------------------
+# DESCRIPCIÓN: Alerta cuando una IP intenta escribir un valor en un registro del PLC.
+# TÉCNICA: Busca el byte 0x06 en el offset 7 del payload TCP (Header Modbus = 7 bytes).
+# RIESGO: Modificación no autorizada de setpoints operativos.
+
+alert tcp any any -> any 502 (msg:"ICS-IDS: Modbus TCP - Write Single Register Attempt (Func 06)"; flow:to_server,established; content:"|06|"; offset:7; depth:1; metadata:service modbus; classtype:attempted-admin; priority:1; sid:1000001; rev:1;)
+
+# ------------------------------------------------------------------------------
+# REGLA 2: Detección de Escritura Múltiple Modbus (Function Code 16)
+# ------------------------------------------------------------------------------
+# DESCRIPCIÓN: Similar a la anterior, pero para escritura en bloque (más dañina).
+# TÉCNICA: Busca el byte 0x10 (16 en decimal) en el offset 7.
+
+alert tcp any any -> any 502 (msg:"ICS-IDS: Modbus TCP - Write Multiple Registers Attempt (Func 16)"; flow:to_server,established; content:"|10|"; offset:7; depth:1; metadata:service modbus; classtype:attempted-admin; priority:1; sid:1000002; rev:1;)
+
+# ------------------------------------------------------------------------------
+# REGLA 3: Detección de Tráfico S7Comm de Escritura (Siemens)
+# ------------------------------------------------------------------------------
+# DESCRIPCIÓN: Alerta si se detecta la función "Write Var" en el protocolo S7 (Puerto 102).
+# ANÁLISIS: En el tráfico S7Comm, el Job Header suele empezar tras el TPKT/COTP.
+# Buscamos la función 0x05 (Write Var).
+
+alert tcp any any -> any 102 (msg:"ICS-IDS: Siemens S7 - Variable Write Detected"; flow:to_server,established; content:"|32|"; offset:7; depth:1; content:"|05|"; distance:10; classtype:policy-violation; sid:1000003; rev:1;)
+
+# ------------------------------------------------------------------------------
+# REGLA 4: Detección de Parada de CPU (S7 Stop)
+# ------------------------------------------------------------------------------
+# DESCRIPCIÓN: Alerta crítica si alguien envía un comando de parada al PLC.
+# TÉCNICA: Busca el Function Code 0x29 (Stop) en el header de control.
+
+alert tcp any any -> any 102 (msg:"ICS-IDS: CRITICAL - Siemens PLC STOP Command Detected"; flow:to_server,established; content:"|29|"; offset:17; depth:1; classtype:attempted-dos; priority:1; sid:1000004; rev:1;)
